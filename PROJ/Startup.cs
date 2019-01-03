@@ -1,9 +1,16 @@
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SpaServices.AngularCli;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.IdentityModel.Tokens;
+using PROJ.Models;
+using System;
+using System.Text;
 
 namespace PROJ
 {
@@ -20,6 +27,46 @@ namespace PROJ
         public void ConfigureServices(IServiceCollection services)
         {
             services.AddMvc().SetCompatibilityVersion(CompatibilityVersion.Version_2_1);
+
+            services.AddDbContext<AppDbContext>(
+                opt => opt.UseSqlServer(Configuration.GetConnectionString("DefaultConnection"))
+            );
+            services.AddIdentity<AppUser, IdentityRole>(options =>
+            {
+                options.Password.RequiredLength = 6;
+                options.Password.RequireLowercase = false;
+                options.Password.RequireUppercase = false;
+                options.Password.RequireNonAlphanumeric = false;
+                options.Password.RequireDigit = false;
+            })
+                .AddEntityFrameworkStores<AppDbContext>()
+                .AddDefaultTokenProviders();
+
+            var secureKey = Configuration.GetSection("JwtSecurityToken:SecureKey").Value;
+            var IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secureKey));
+            var ValidAudience = Configuration.GetSection("JwtSecurityToken:Audience").Value;
+            var ValidIssuer = Configuration.GetSection("JwtSecurityToken:Issuer").Value;
+            services.AddAuthentication(options =>
+            {
+                options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+                options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+                options.DefaultScheme = JwtBearerDefaults.AuthenticationScheme;
+            })
+            .AddJwtBearer(options => {
+                options.SaveToken = true;
+                options.RequireHttpsMetadata = false;
+                options.TokenValidationParameters = new Microsoft.IdentityModel.Tokens.TokenValidationParameters()
+                {
+                    ValidateIssuer = true,
+                    ValidateAudience = true,
+                    ValidateLifetime = true,
+                    ValidateIssuerSigningKey = true,
+                    ValidAudience = ValidAudience,
+                    ValidIssuer = ValidIssuer,
+                    IssuerSigningKey = IssuerSigningKey,
+                    ClockSkew = TimeSpan.Zero
+                };
+            });
 
             // In production, the Angular files will be served from this directory
             services.AddSpaStaticFiles(configuration =>
@@ -39,6 +86,12 @@ namespace PROJ
             {
                 app.UseExceptionHandler("/Error");
             }
+
+            SeedDB.InitAsync(
+                app.ApplicationServices.GetRequiredService<IServiceScopeFactory>().CreateScope().ServiceProvider,
+                Configuration
+                );
+            app.UseAuthentication();
 
             app.UseStaticFiles();
             app.UseSpaStaticFiles();
