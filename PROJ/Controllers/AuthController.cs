@@ -5,6 +5,7 @@ using System.Linq;
 using System.Security.Claims;
 using System.Text;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
@@ -29,9 +30,14 @@ namespace PROJ.Controllers
 
 
         [HttpPost]
-        [Route("login")]
+        [Route("Login")]
         public async Task<IActionResult> Login([FromHeader] LoginModel model)
         {
+            if (!ModelState.IsValid)
+            {
+                return Unauthorized();
+            }
+
             var user = await userManager.FindByNameAsync(model.UserName);
             if(user !=null && await userManager.CheckPasswordAsync(user, model.Password))
             {
@@ -76,6 +82,42 @@ namespace PROJ.Controllers
                 });
             }
             return Unauthorized();
+        }
+
+        [HttpPost]
+        [AllowAnonymous]
+        [Route("Register")]
+        public async Task<IdentityResult> Register([FromHeader] RegisterModel model)
+        {
+            if (!ModelState.IsValid)
+            {
+                return GetIdentityResErr();
+            }
+
+            var user = new AppUser() { UserName = model.UserName, Email = model.Email };
+
+            var res = await userManager.CreateAsync(user, model.Password);
+            if (res.Succeeded)
+            {
+                await userManager.AddToRoleAsync(user, "user");
+            }
+
+            return res;
+        }
+
+        public IdentityResult GetIdentityResErr()
+        {
+            var errors = ModelState.Select(x => x.Value.Errors)
+                           .Where(y => y.Count > 0)
+                           .ToList();
+
+            var identityError = new List<IdentityError>();
+            foreach (var error in errors)
+            {
+                identityError.Add(new IdentityError() { Description = error.FirstOrDefault().ErrorMessage });
+            }
+
+            return IdentityResult.Failed(identityError.ToArray());
         }
     }
 }
